@@ -1,0 +1,10 @@
+PerfStats
+Report
+__pycache__
+Crawler.ipynb
+unity-environment.log
+Reacher_Windows_x86_64_Multi
+Reacher_Windows_x86_64_Single
+MainRun.log
+.ipynb_checkpoints
+trained_reacher_e*.pth
