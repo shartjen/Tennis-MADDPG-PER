@@ -8,10 +8,9 @@ import numpy as np
 def transpose_list(mylist):
     return list(map(list, zip(*mylist)))
 
-def list_to_tensor(input_list):
-    print('List to tensor')
-    print(len(input_list))
-    print(type(input_list[0]))
+def transpose_to_tensor(input_list, agent_number):
+    input_list = transpose_list(input_list)
+    input_list = input_list[agent_number]
     make_tensor = lambda x: torch.tensor(x, dtype=torch.float)
     return list(map(make_tensor, zip(*input_list)))
 
