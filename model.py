@@ -12,7 +12,7 @@ def hidden_init(layer):
 class Actor(nn.Module):
     """Actor (Policy) Model."""
 
-    def __init__(self, state_size, hidden_size, action_size, seed): #, fc1_units=24, fc2_units=48):
+    def __init__(self, state_size, hidden_size, action_size, seed, dropout): #, fc1_units=24, fc2_units=48):
         """Initialize parameters and build model.
         Params
         ======
@@ -27,6 +27,7 @@ class Actor(nn.Module):
         self.input_layer = nn.Linear(state_size, hidden_size)
         self.batchnorm_layer = nn.BatchNorm1d(hidden_size)
         self.fc1 = nn.Linear(hidden_size, int(hidden_size/2))
+        self.dropout_layer = nn.Dropout(p=dropout)
         self.output_layer = nn.Linear(int(hidden_size/2), action_size)
         self.reset_parameters()
 
@@ -40,6 +41,7 @@ class Actor(nn.Module):
         x = F.relu(self.input_layer(state))
         # x = F.relu(self.batchnorm_layer(x))
         x = F.relu(self.fc1(x))
+        x = self.dropout_layer(x)
         return torch.tanh(self.output_layer(x))
 
 
@@ -75,5 +77,5 @@ class Critic(nn.Module):
         x = F.relu(self.batchnorm_layer(x))
         x = torch.cat((x, action), dim=1)
         x = F.relu(self.fc1(x))
-        # x = self.dropout_layer(x)
+        x = self.dropout_layer(x)
         return self.output_layer(x)

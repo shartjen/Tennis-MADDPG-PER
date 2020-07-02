@@ -32,7 +32,7 @@ class ddpg_agent():
         # Q-Network
         self.create_networks()
         # Noise process
-        self.noise = OUNoise(self.action_size, self.seed)
+        self.noise = OUNoise(self.action_size, self.seed, sigma = self.sigma)
     
     def set_parameters(self, config):
         # Base agent parameters
@@ -44,24 +44,34 @@ class ddpg_agent():
         self.batch_size = config['batch_size']
         self.dropout = config['dropout']
         self.learn_every = config['learn_every']
+        self.joined_states = config['joined_states']
         self.critic_learning_rate = config['critic_learning_rate']
         self.actor_learning_rate = config['actor_learning_rate']
         self.noise_decay = config['noise_decay']
         self.seed = (config['seed'])
         self.noise_scale = 1
+        self.sigma = 1
         # Some debug flags
         self.Do_debug_values = False
         self.Do_debug_qr = True
         
     def create_networks(self):
         # Actor Network (local & Target Network)
-        self.actor_local = Actor(self.state_size, self.hidden_size, self.action_size, self.seed).to(device)
-        self.actor_target = Actor(self.state_size, self.hidden_size, self.action_size, self.seed).to(device)
+        if self.joined_states:
+            # if states are being joined, both nets take both states combined as input and critic also takes both actions as input
+            input_size = self.state_size*2
+            action_input_size = 2*self.action_size
+        else:
+            input_size = self.state_size
+            action_input_size = self.action_size
+            
+        self.actor_local = Actor(input_size, self.hidden_size, self.action_size, self.seed, self.dropout).to(device)
+        self.actor_target = Actor(input_size, self.hidden_size, self.action_size, self.seed, self.dropout).to(device)
         self.actor_optimizer = optim.Adam(self.actor_local.parameters(), lr=self.actor_learning_rate)
 
         # Critic Network (local & Target Network)
-        self.critic_local = Critic(self.state_size, self.hidden_size, self.action_size, self.seed, self.dropout).to(device)
-        self.critic_target = Critic(self.state_size, self.hidden_size, self.action_size, self.seed, self.dropout).to(device)
+        self.critic_local = Critic(input_size, self.hidden_size, action_input_size, self.seed, self.dropout).to(device)
+        self.critic_target = Critic(input_size, self.hidden_size, action_input_size, self.seed, self.dropout).to(device)
         self.critic_optimizer = optim.Adam(self.critic_local.parameters(), lr=self.critic_learning_rate)
 
     def act(self, state, add_noise=True):
@@ -75,7 +85,7 @@ class ddpg_agent():
         actions = np.clip(actions, -1, 1)
         return actions
     
-    def learn(self, states, actions, rewards, next_states, dones):
+    def learn(self, states, actions, rewards, next_states, actions_next, dones):
         """Update policy and value parameters using given batch of experience tuples.
         q_target = r + γ * critic_target(next_state, actor_target(next_state))
         where:
@@ -84,15 +94,14 @@ class ddpg_agent():
 
         # ---------------------------- update critic ---------------------------- #
         # Get predicted next-state actions and Q values from target models
+        # actions_next = self.actor_target(next_states)
         # print('learn : Next States : ',next_states.shape)
-        actions_next = self.actor_target(next_states)
         q_next = self.critic_target(next_states, actions_next)
-        # print('learn : Actions : ',actions_next.shape)
-        # print('learn : Q_target_next : ',q_next.shape)
         # Compute Q targets for current states (y_i)
         q_target = rewards + (self.gamma * q_next * (1 - dones))
         # Compute critic loss
         q_expected = self.critic_local(states, actions)
+        # print('learn shapes : ',actions_next.shape, q_next.shape, q_target.shape, q_expected.shape)
 
         td_error = q_target - q_expected
         # if max_reward > 0.01:
@@ -109,6 +118,16 @@ class ddpg_agent():
         # ---------------------------- update actor ---------------------------- #
         # Compute actor loss
         actions_pred = self.actor_local(states)
+        if self.joined_states:
+            # print('Learn Shapes : ',actions_pred.shape, actions.shape)
+            # Add actions pred in the agent specific part of actions_next
+            # print('pred : ',actions_pred[1:4,:])
+            if self.id == 0:
+                actions_pred = torch.cat([actions_pred,actions[:,self.action_size:2*self.action_size]],dim=1)
+            else:
+                actions_pred = torch.cat([actions[:,0:self.action_size], actions_pred],dim=1)
+            # print('actions : ',actions[1:4,:])
+            # print('cat : ',actions_pred[1:4,:])
         actor_loss = -self.critic_local(states, actions_pred).mean()
         # Minimize the loss
         self.actor_optimizer.zero_grad()
