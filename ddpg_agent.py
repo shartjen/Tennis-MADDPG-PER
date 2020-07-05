@@ -42,6 +42,8 @@ class ddpg_agent():
         self.action_size = config['action_size']
         self.hidden_size = config['hidden_size']
         self.batch_size = config['batch_size']
+        self.beta = config['beta']
+        self.emin = config['emin']
         self.dropout = config['dropout']
         self.learn_every = config['learn_every']
         self.joined_states = config['joined_states']
@@ -53,7 +55,7 @@ class ddpg_agent():
         self.sigma = 1
         # Some debug flags
         self.Do_debug_values = False
-        self.Do_debug_qr = True
+        self.Do_debug_qr = False
         
     def create_networks(self):
         # Actor Network (local & Target Network)
@@ -85,7 +87,7 @@ class ddpg_agent():
         actions = np.clip(actions, -1, 1)
         return actions
     
-    def learn(self, states, actions, rewards, next_states, actions_next, dones):
+    def learn(self, states, actions, rewards, next_states, actions_next, dones, probs, len_memory):
         """Update policy and value parameters using given batch of experience tuples.
         q_target = r + γ * critic_target(next_state, actor_target(next_state))
         where:
@@ -101,7 +103,7 @@ class ddpg_agent():
         q_target = rewards + (self.gamma * q_next * (1 - dones))
         # Compute critic loss
         q_expected = self.critic_local(states, actions)
-        # print('learn shapes : ',actions_next.shape, q_next.shape, q_target.shape, q_expected.shape)
+        # print('learn shapes : ',actions_next.shape, q_next.shape, q_target.shape, q_expected.shape, rewards.shape)
 
         td_error = q_target - q_expected
         # if max_reward > 0.01:
@@ -112,6 +114,9 @@ class ddpg_agent():
         # Minimize the loss
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        ISweights = (probs/len_memory) ** self.beta
+        for param, weight in zip(self.critic_local.parameters(), ISweights):
+            param.grad.data *= weight
         torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1)
         self.critic_optimizer.step()
 
@@ -141,7 +146,12 @@ class ddpg_agent():
 
         al = actor_loss.cpu().detach().item()
         cl = critic_loss.cpu().detach().item()
-        return al,cl
+        td_error = td_error.detach().numpy()
+        td_error += np.sign(td_error)*self.emin
+        if np.any(td_error == 0):
+            # replace zeroes bei self.emin (sign(-abs(deltaQ))+1) = 0 for all others
+            td_error += (np.sign(-abs(td_error))+1)*self.emin
+        return al,cl, np.abs(td_error)
 
     def soft_update(self, local_model, target_model, tau):
         """Soft update model parameters.
@@ -176,7 +186,7 @@ class ddpg_agent():
         
     def debug_update_qr(self, q_expected, rewards,td_error):
         if self.Do_debug_qr and (self.episode % 10 == 0) or (torch.max(rewards) > 0.01):
-            print('--------------------------------------')
+            print('--------------Agent Learn------------------------')
             print('Agent {} and episode {} '.format(self.id, self.episode))
             print('update - q expected : mean : {:6.4f} - sd : {:6.4f} min-max {:6.4f}|{:6.4f}'.format(torch.mean(q_expected),torch.std(q_expected),torch.min(q_expected),torch.max(q_expected)))
             if torch.max(rewards) > 0.01:
@@ -184,8 +194,10 @@ class ddpg_agent():
                 print(Style.RESET_ALL, end='')                
             else:
                 print('update - reward : mean : {:6.4f} - sd : {:6.4f} min-max {:6.4f}|{:6.4f}'.format(torch.mean(rewards),torch.std(rewards),torch.min(rewards),torch.max(rewards)))
-                
+            
+            abs_td_error = torch.abs(td_error)
             print('update - TD-Error : mean : {:6.4f} - sd : {:6.4f} min-max {:6.4f}|{:6.4f}'.format(torch.mean(td_error),torch.std(td_error),torch.min(td_error),torch.max(td_error)))
+            print('update - abs-TD-Error : mean : {:6.4f} - sd : {:6.4f} min-max {:6.4f}|{:6.4f}'.format(torch.mean(abs_td_error),torch.std(abs_td_error),torch.min(abs_td_error),torch.max(abs_td_error)))
 
             
     def save_agent(self,i_episode):
