@@ -31,6 +31,8 @@ class ReplayBuffer:
         self.add_deltaQ_mult = 3                # Multplier to mean_deltaQ with which to add new experiences lacking Qs
         self.initial_deltaQ = 0.005             # deltaQ to use for first ekement added
         self.first_batch = False
+        # some debug flags
+        self.debug_update = False
 
     def add(self, states, actions, rewards, next_states, dones):
         """Add a new experience to memory."""
@@ -79,16 +81,15 @@ class ReplayBuffer:
 
     def updatedeltaQ(self,NewQ,exp_indices, agent_id):
         
-        debugupdate = False
-        if debugupdate:
-            print('PER updates following indicies and New Qs:')
+        if self.debug_update:
+            print('----PER updates following indicies and New Qs (agent : {})-----'.format(agent_id))
             OldQ = []
             # print(np.transpose(NewQ))
             # print(exp_indices)
         
         for ei,q in zip(exp_indices,NewQ):
             q = q.item()
-            if debugupdate:
+            if self.debug_update:
                 # print('Updating index : {} with new Q : {:6.4f} while previous value is {:6.4f}'.format(ei, q,self.memory[ei][agent_id].deltaQ))
                 OldQ.append(self.memory[ei][agent_id].deltaQ)
             self.sum_deltaQ[agent_id] += (q-abs(self.memory[ei][agent_id].deltaQ))
@@ -96,7 +97,7 @@ class ReplayBuffer:
             self.memory[ei][agent_id] = self.memory[ei][agent_id]._replace(deltaQ = q)
             self.memory[ei][agent_id] = self.memory[ei][agent_id]._replace(deltaQ_alpha = q ** self.alpha)
             
-        if debugupdate:
+        if self.debug_update:
             print('MinNewQ : {:8.6f} MaxNewQ : {:8.6f} and mean NewQ = {:8.6f} and std NewQ = {:8.6f}'.format(np.min(NewQ),np.max(NewQ),np.mean(NewQ),np.std(NewQ)))
             print('MinOldQ : {:8.6f} MaxOldQ : {:8.6f} and mean OldQ = {:8.6f} and std OldQ = {:8.6f}'.format(min(OldQ),max(OldQ),np.mean(OldQ),np.std(OldQ)))
             
@@ -200,7 +201,7 @@ class ReplayBuffer:
 
     def mem_print_summary(self):
         
-        print('Replay Buffer Summary :')
+        print('----------------------Replay Buffer Summary---------------------------------')
         print('Exponent for weights : ',self.alpha)
         print('Number of Elements in Buffer : ',len(self))
         

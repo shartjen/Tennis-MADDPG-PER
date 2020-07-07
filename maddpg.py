@@ -37,6 +37,8 @@ class maddpg():
         self.memory = ReplayBuffer(config)
         # Q-Network
         self.create_agents(config)
+        # load agent
+        # self.load_agent('trained_tennis.pth')
     
     def set_parameters(self, config):
         # Base agent parameters
@@ -195,6 +197,9 @@ class maddpg():
                 print(Style.RESET_ALL, end='')                
                 if self.debug_show_memory_summary:self.memory.mem_print_summary()
         # for i_episode
+                
+        # self.save_agent()
+        # self.load_agent('trained_tennis.pth')
             
         return self.results
     
@@ -292,21 +297,29 @@ class maddpg():
         self.results.actor_loss.append(np.mean(actor_loss))
         self.results.critic_loss.append(np.mean(critic_loss))
 
-    def save_agent(self,i_episode):
-        filename = 'trained_reacher_e'+str(i_episode)+'.pth'
+    def save_agent(self):
+        filename = 'trained_tennis.pth'
         torch.save({
-            'critic_local': self.critic_local.state_dict(),
-            'critic_target': self.critic_target.state_dict(),
-            'actor_local': self.actor_local.state_dict(),
-            'actor_target': self.actor_target.state_dict(),
+            'critic_local0': self.maddpg_agent[0].critic_local.state_dict(),
+            'critic_target0': self.maddpg_agent[0].critic_target.state_dict(),
+            'actor_local0': self.maddpg_agent[0].actor_local.state_dict(),
+            'actor_target0': self.maddpg_agent[0].actor_target.state_dict(),
+            'critic_local1': self.maddpg_agent[1].critic_local.state_dict(),
+            'critic_target1': self.maddpg_agent[1].critic_target.state_dict(),
+            'actor_local1': self.maddpg_agent[1].actor_local.state_dict(),
+            'actor_target1': self.maddpg_agent[1].actor_target.state_dict(),
             }, filename)
         print('Saved Networks in ',filename)
         return
         
     def load_agent(self,filename):
         savedata = torch.load(filename)
-        self.critic_local.load_state_dict(savedata['critic_local'])
-        self.critic_target.load_state_dict(savedata['critic_target'])
-        self.actor_local.load_state_dict(savedata['actor_local'])
-        self.actor_target.load_state_dict(savedata['actor_target'])
+        self.maddpg_agent[0].critic_local.load_state_dict(savedata['critic_local0'])
+        self.maddpg_agent[0].critic_target.load_state_dict(savedata['critic_target0'])
+        self.maddpg_agent[0].actor_local.load_state_dict(savedata['actor_local0'])
+        self.maddpg_agent[0].actor_target.load_state_dict(savedata['actor_target0'])
+        self.maddpg_agent[1].critic_local.load_state_dict(savedata['critic_local1'])
+        self.maddpg_agent[1].critic_target.load_state_dict(savedata['critic_target1'])
+        self.maddpg_agent[1].actor_local.load_state_dict(savedata['actor_local1'])
+        self.maddpg_agent[1].actor_target.load_state_dict(savedata['actor_target1'])
         return

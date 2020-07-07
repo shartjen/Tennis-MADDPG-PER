@@ -185,7 +185,7 @@ class ddpg_agent():
             print(qlist)
         
     def debug_update_qr(self, q_expected, rewards,td_error):
-        if self.Do_debug_qr and (self.episode % 10 == 0) or (torch.max(rewards) > 0.01):
+        if self.Do_debug_qr and ((self.episode % 10 == 0) or (torch.max(rewards) > 0.01)):
             print('--------------Agent Learn------------------------')
             print('Agent {} and episode {} '.format(self.id, self.episode))
             print('update - q expected : mean : {:6.4f} - sd : {:6.4f} min-max {:6.4f}|{:6.4f}'.format(torch.mean(q_expected),torch.std(q_expected),torch.min(q_expected),torch.max(q_expected)))
@@ -241,41 +241,3 @@ class OUNoise:
         dx = self.theta * (self.mu - x) + self.sigma * np.array([random.random() for i in range(len(x))])
         self.state = x + dx
         return self.state
-
-class ReplayBuffer:
-    """Fixed-size buffer to store experience tuples."""
-
-    def __init__(self, action_size, buffer_size, batch_size, seed):
-        """Initialize a ReplayBuffer object.
-        Params
-        ======
-            buffer_size (int): maximum size of buffer
-            self.batch_size (int): size of each training batch
-        """
-        self.action_size = action_size
-        self.memory = deque(maxlen=buffer_size)  # internal memory (deque)
-        self.batch_size = batch_size
-        self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
-        self.seed = random.seed(seed)
-            
-    def add(self, states, actions, rewards, next_states, dones):
-        """Add a new experience to memory."""
-        # print('Adding experiences to memory : ')
-        # print('State shape : ',states.shape)
-        # print(type(states))
-        new_experience = []
-        # new_experience_set = [self.experience() for e in np.arange(states.shape[0])]
-        for a in range(states.shape[0]): # a as num_agents
-            e = self.experience(states[a,:], actions[a,:], rewards[a], next_states[a,:], dones[a])
-            new_experience.append(e)
-        # print('New Experience : ',new_experience)
-        self.memory.append(new_experience)
-    
-    def sample(self):
-        """Randomly sample a batch of experiences from memory."""
-        experiences = random.sample(self.memory, k=self.batch_size)
-        return experiences
-
-    def __len__(self):
-        """Return the current size of internal memory."""
-        return len(self.memory)
