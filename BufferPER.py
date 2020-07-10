@@ -29,7 +29,7 @@ class ReplayBuffer:
         self.sum_deltaQA = np.zeros(self.num_agents)
         self.mean_deltaQ = np.zeros(self.num_agents)
         self.add_deltaQ_mult = 3                # Multplier to mean_deltaQ with which to add new experiences lacking Qs
-        self.initial_deltaQ = 0.005             # deltaQ to use for first ekement added
+        self.initial_deltaQ = 0.005             # deltaQ to use for first ekements added
         self.first_batch = False
         # some debug flags
         self.debug_update = False

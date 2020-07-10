@@ -45,12 +45,12 @@ class ddpg_agent():
         self.beta = config['beta']
         self.emin = config['emin']
         self.dropout = config['dropout']
-        self.learn_every = config['learn_every']
+        # self.learn_every = config['learn_every']
         self.joined_states = config['joined_states']
         self.critic_learning_rate = config['critic_learning_rate']
         self.actor_learning_rate = config['actor_learning_rate']
-        self.noise_decay = config['noise_decay']
         self.seed = (config['seed'])
+        torch.manual_seed(self.seed)
         self.noise_scale = 1
         self.sigma = 1
         # Some debug flags
@@ -94,6 +94,7 @@ class ddpg_agent():
             actor_target(state) -> action
             critic_target(state, action) -> Q-value """
 
+        # print('agent learn shapes : ',states.shape, actions.shape, rewards.shape, next_states.shape, dones.shape)
         # ---------------------------- update critic ---------------------------- #
         # Get predicted next-state actions and Q values from target models
         # actions_next = self.actor_target(next_states)

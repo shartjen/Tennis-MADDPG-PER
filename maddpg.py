@@ -43,7 +43,10 @@ class maddpg():
     def set_parameters(self, config):
         # Base agent parameters
         self.gamma = config['gamma']                    # discount factor 
-        self.tau = config['tau']
+        self.tau_low = config['tau_low']
+        self.tau_high = config['tau_high']
+        self.tau = self.tau_high
+        config['tau'] = self.tau
         self.max_episodes = config['max_episodes']      # max numbers of episdoes to train
         self.env_file_name = config['env_file_name']    # name and path for env app
         self.brain_name = config['brain_name']          # name for env brain used in step
@@ -53,19 +56,37 @@ class maddpg():
         self.action_size = config['action_size']
         self.hidden_size = config['hidden_size']
         self.buffer_size = config['buffer_size']
-        self.batch_size = config['batch_size']
+        self.alpha_low = config['alpha_low']
+        self.alpha_high = config['alpha_high']
+        config['alpha'] = self.alpha_low
+        self.beta_low = config['beta_low']
+        self.beta_high = config['beta_high']
+        config['beta'] = self.beta_low
+        self.batch_size_low = config['batch_size_low']
+        self.batch_size_high = config['batch_size_high']
+        self.batch_size = self.batch_size_low
+        config['batch_size'] = self.batch_size
         self.emin = 0.0001
         config['emin'] = self.emin
         self.min_batch_size = 256                      # if batch_size is large, this will be used as batchsize for early samples until buffer is filled with > batchsize experiences
         self.use_PER = True
         self.dropout = config['dropout']
-        self.learn_every = config['learn_every']
+        self.learn_every_high = config['learn_every_high']
+        self.learn_every_low = config['learn_every_low']
+        self.learn_every = self.learn_every_high
         self.joined_states = config['joined_states']
         self.critic_learning_rate = config['critic_learning_rate']
         self.actor_learning_rate = config['actor_learning_rate']
-        self.noise_decay = config['noise_decay']
+        self.noise_decay_fast = config['noise_decay_fast']
+        self.noise_decay = self.noise_decay_fast
+        self.noise_decay_slow = config['noise_decay_slow']
+        self.noise_scale_trigger = config['noise_scale_trigger']
+        self.noise_rewards_trigger = 0.02
+        self.noise_rewards_pre_trigger = self.noise_rewards_trigger - (self.noise_scale_trigger - 0.4)*0.75
         self.seed = (config['seed'])
         self.noise_scale = 1
+        self.noise_decay_changed = False
+        self.noise_bridge = False
         self.results = struct_class()
         # Some Debug flags
         self.debug_show_memory_summary = False
@@ -111,8 +132,42 @@ class maddpg():
         self.results.critic_loss = []
         self.results.actor_loss = []
 
+    def update_parameters(self):
+        # Reduce noise after reward reaches trigger and increase PER intensity
+        if len(self.results.avg_rewards) and not self.noise_decay_changed:
+            if (self.noise_scale < self.noise_scale_trigger) and (self.results.avg_rewards[-1] > self.noise_rewards_pre_trigger) and (self.results.avg_rewards[-1] < self.noise_rewards_trigger) and not self.noise_bridge:
+                if not self.noise_bridge:
+                    print('Noisetrigger : Bridging')
+                    self.noise_bridge = True
+                self.noise_decay = 1
+                # self.learn_every
+            if (self.noise_scale < self.noise_scale_trigger) and (self.results.avg_rewards[-1] < self.noise_rewards_pre_trigger) and not self.noise_bridge:
+                # if noise to small already and reward trigger not achieved, reset noise and hope for better retry
+                print('Noisetrigger : Noise reset (avg : {})'.format(self.results.avg_rewards[-1]))
+                self.noise_reset()
+                self.noise_scale = 1
+            if (self.noise_scale < self.noise_scale_trigger) and (self.results.avg_rewards[-1] > self.noise_rewards_trigger):
+                # print('Changing noise decay from {} to {}'.format(self.noise_decay, 0.9999))
+                print('Noisetrigger : Changing noise decay')
+                self.set_updated_parameters()
+                # self.noise_decay = 1
+                self.noise_decay_changed = True
+        return
+    
+    def set_updated_parameters(self):
+        self.noise_decay = self.noise_decay_slow
+        self.memory.alpha = self.alpha_high
+        self.memory.beta = self.beta_high
+        self.batch_size = self.batch_size_high
+        self.memory.batch_size = self.batch_size
+        self.learn_every = self.learn_every_low
+        self.tau = self.tau_low
+        for agent in self.maddpg_agent:
+            agent.tau =  self.tau
+
     def episode_reset(self):
         self.noise_reset()
+        self.update_parameters()
         self.noise_scale *= self.noise_decay
         for agent in self.maddpg_agent:
             agent.noise_scale = self.noise_scale
@@ -190,7 +245,13 @@ class maddpg():
             # Output Episode info : 
             if (i_episode % 20 == 0) or (np.max(total_reward) > 0.01):
                 if np.max(total_reward) > 0.01:
-                    StyleString = Back.RED
+                    if np.sum(total_reward) > 0.15:
+                        if np.sum(total_reward) > 0.25:
+                            StyleString = Back.GREEN
+                        else:
+                            StyleString = Back.BLUE
+                    else:
+                        StyleString = Back.RED
                 else:
                     StyleString = ''
                 print(StyleString + 'Episode {} with {} steps || Reward : {} || avg reward : {:6.3f} || Noise {:6.3f} || {:5.3f} seconds, mem : {}'.format(i_episode,t,total_reward,np.mean(self.results.reward_window),self.noise_scale,toc-tic,len(self.memory)))
@@ -210,7 +271,8 @@ class maddpg():
         if self.joined_states:
             states = ten(np.vstack([np.concatenate([e.state for e in batch],axis=0) for batch in experiences]))
             actions = ten(np.vstack([np.concatenate([e.action for e in batch],axis=0) for batch in experiences]))
-            rewards = ten(np.vstack([np.hstack([e.reward for e in batch]) for batch in experiences]))
+            # rewards = ten(np.vstack([np.hstack([e.reward for e in batch]) for batch in experiences]))
+            rewards = ten(np.vstack([np.sum([e.reward for e in batch]) for batch in experiences]))
             next_states = ten(np.vstack([np.concatenate([e.next_state for e in batch],axis=0) for batch in experiences]))
             dones = ten(np.vstack([sum([int(e.done) for e in batch]) for batch in experiences]))
         else:
@@ -226,7 +288,7 @@ class maddpg():
 
     def ununzip_experiences(self, experiences):
         """ experiences from PER is list(len=num_agents) list(len=num_agents) of list(len=batch_size) of experiences(namedtuple of states, actions, rewards, next_states, dones)
-            as both agent do not use the same experiences anymore, as their deltaQ in the buffer are different
+            as both agent do not use the same experiences anymore, as their deltaQ in the buffer are different, top list reflect different experiences drawn
             returns list(len=num_agents) of states... as tensors(shape[num_agents, batch_size, item_size(e.g. state_size)])"""
         state_list = []
         action_list = []
@@ -242,7 +304,7 @@ class maddpg():
             done_list.append(dones)
         return state_list, action_list, reward_list, next_state_list, done_list
     
-    def experiences_by_agent(self, agent_num, states, actions, rewards, next_states, both_next_actions, dones):
+    """def experiences_by_agent(self, agent_num, states, actions, rewards, next_states, both_next_actions, dones):
         
         states = states[agent_num,:,:]
         actions = actions[agent_num,:,:]
@@ -254,7 +316,7 @@ class maddpg():
         next_actions = both_actions_next[agent.id]
         print(next_actions)
 
-        return  states, actions, rewards, next_states, next_actions, dones
+        return  states, actions, rewards, next_states, next_actions, dones"""
             
     def learn(self, experiences, exp_indices, probs):
         """Update policy and value parameters using given batch of experience tuples.
@@ -272,6 +334,7 @@ class maddpg():
             # without PER there is only one list to unzip
             states, actions, rewards, next_states, dones = self.unzip_experiences(experiences)
         # print('Learning shape : ',states.shape, actions.shape, rewards.shape, next_states.shape, dones.shape)
+        # print('Learning state & reward shape : ',states[0].shape,rewards[0].shape)
         
         actor_loss = []
         critic_loss = []
@@ -287,7 +350,8 @@ class maddpg():
                 if not self.use_PER:
                     al, cl = agent.learn(states, actions, rewards[:,agent.id].unsqueeze(1), next_states, both_next_actions, dones)
                 else:
-                    al, cl, NewQ = agent.learn(states[agent.id], actions[agent.id], rewards[agent.id][:,agent.id].unsqueeze(1), next_states[agent.id], both_next_actions[agent.id], dones[agent.id], probs[agent.id], len(self.memory))
+                    # al, cl, NewQ = agent.learn(states[agent.id], actions[agent.id], rewards[agent.id][:,agent.id].unsqueeze(1), next_states[agent.id], both_next_actions[agent.id], dones[agent.id], probs[agent.id], len(self.memory))
+                    al, cl, NewQ = agent.learn(states[agent.id], actions[agent.id], rewards[agent.id], next_states[agent.id], both_next_actions[agent.id], dones[agent.id], probs[agent.id], len(self.memory))
                     self.memory.updatedeltaQ(NewQ, exp_indices[agent.id], agent.id)
             else:
                 al, cl = agent.learn(*(self.experiences_by_agent(agent.id,states, actions, rewards, next_states, both_next_actions, dones)))
